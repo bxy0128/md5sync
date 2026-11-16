@@ -32,7 +32,7 @@ func usage() {
 
 不带参数且未指定 -clip 时，也会尝试读取剪贴板。
 支持通配符（*.mkv）与文件夹递归。
-结果以 JSON 数组输出到标准输出，并复制到剪贴板。
+结果以 JSON 数组输出到标准输出（Windows 下同时复制到剪贴板）。
 `)
 }
 
@@ -46,14 +46,20 @@ func main() {
 
 	raw := flag.Args()
 	if len(raw) == 0 || *forceClip {
-		text, err := clip.Read()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "读取剪贴板失败: %v\n", err)
-		} else if text != "" {
-			for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
-				line = strings.Trim(strings.TrimSpace(line), `"`)
-				if line != "" {
-					raw = append(raw, line)
+		if !clip.Supported {
+			if *forceClip {
+				fmt.Fprintln(os.Stderr, "当前系统不支持剪贴板读取，请直接传入文件路径")
+			}
+		} else {
+			text, err := clip.Read()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "读取剪贴板失败: %v\n", err)
+			} else if text != "" {
+				for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+					line = strings.Trim(strings.TrimSpace(line), `"`)
+					if line != "" {
+						raw = append(raw, line)
+					}
 				}
 			}
 		}
@@ -180,8 +186,13 @@ func main() {
 			fmt.Fprintf(os.Stderr, "写入文件失败: %v\n", err)
 		}
 	}
-	if err := clip.Write(text); err != nil {
-		fmt.Fprintf(os.Stderr, "复制到剪贴板失败: %v\n", err)
+	copied := false
+	if clip.Supported {
+		if err := clip.Write(text); err != nil {
+			fmt.Fprintf(os.Stderr, "复制到剪贴板失败: %v\n", err)
+		} else {
+			copied = true
+		}
 	}
 
 	var totalBytes int64
@@ -189,8 +200,12 @@ func main() {
 		totalBytes += r.Size
 	}
 	elapsed := time.Since(start).Seconds()
-	fmt.Fprintf(os.Stderr, "总耗时 %.1f 秒   文件数 %d   平均 %.0f MB/s   已复制到剪贴板\n",
+	summary := fmt.Sprintf("总耗时 %.1f 秒   文件数 %d   平均 %.0f MB/s",
 		elapsed, len(okResults), float64(totalBytes)/(1<<20)/elapsed)
+	if copied {
+		summary += "   已复制到剪贴板"
+	}
+	fmt.Fprintln(os.Stderr, summary)
 
 	if failCount > 0 {
 		os.Exit(2)

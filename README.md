@@ -196,6 +196,19 @@ rclone mount openlist: L: --vfs-cache-mode off --buffer-size 32M --vfs-read-ahea
 
 > 校验需要完整读取一遍文件内容，远程读取会消耗相应的下载流量，请结合自己的流量套餐评估。命中秒传时，上传流量为 0。
 
+### 5. Linux / 云服务器
+
+Linux 上可直接使用命令行版（没有剪贴板功能，结果只输出到标准输出）：
+
+```bash
+sudo install -m 755 md5calc-linux-amd64 /usr/local/bin/md5calc
+
+md5calc -t 2 /data/movies                 # 本地目录
+md5calc -auth "admin:pass" "http://127.0.0.1:5244/dav/电影/a.mkv"   # 本机 openlist
+```
+
+> 在云服务器上计算会消耗服务器流量，请结合套餐评估；优先在本地计算，或只处理确实需要秒传的文件。
+
 ---
 
 ## 五、常见问题

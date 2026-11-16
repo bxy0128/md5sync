@@ -10,10 +10,12 @@ import (
 	"unsafe"
 )
 
-var (
-	user32   = syscall.NewLazyDLL("user32.dll")
-	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+// Supported 表示当前平台是否支持剪贴板读写。
+const Supported = true
 
+var (
+	user32               = syscall.NewLazyDLL("user32.dll")
+	kernel32             = syscall.NewLazyDLL("kernel32.dll")
 	procOpenClipboard    = user32.NewProc("OpenClipboard")
 	procCloseClipboard   = user32.NewProc("CloseClipboard")
 	procEmptyClipboard   = user32.NewProc("EmptyClipboard")
