@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "md5sync",
+  "outputfilename": "md5sync",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {
+    "name": "md5sync"
+  },
+  "info": {
+    "companyName": "md5sync",
+    "productName": "秒传MD5计算器",
+    "productVersion": "1.0.0",
+    "copyright": "MIT License",
+    "comments": "天翼云盘秒传校验值计算器：流式计算 md5 + slice_md5"
+  }
+}

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>秒传 MD5 计算器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">#</div>
+      <div class="titles">
+        <h1>秒传 MD5 计算器</h1>
+        <p>流式计算 md5 + slice_md5 · 不写磁盘 · 结果可直接粘贴到秒传助手</p>
+      </div>
+    </div>
+    <div class="chip">天翼云盘 · cloud 189</div>
+  </header>
+
+  <main>
+    <section class="dropzone" id="dropzone">
+      <div class="dz-icon">⇣</div>
+      <div class="dz-title">把文件或文件夹拖到这里</div>
+      <div class="dz-sub">也支持添加本机文件、文件夹，或从剪贴板导入路径 / WebDAV 直链</div>
+    </section>
+
+    <section class="toolbar">
+      <button id="btn-files">添加文件</button>
+      <button id="btn-folder">添加文件夹</button>
+      <button id="btn-clip">从剪贴板添加</button>
+      <label class="field">
+        并发
+        <input id="threads" type="number" min="1" max="8" value="2" />
+      </label>
+      <input id="auth" class="field auth" type="text" autocomplete="off"
+             placeholder="可选：WebDAV 认证 用户名:密码" />
+      <span class="spacer"></span>
+      <button id="btn-clear" class="ghost">清空列表</button>
+      <button id="btn-start" class="primary">开始计算</button>
+    </section>
+
+    <section class="statusbar">
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="status" id="status">等待添加文件</div>
+    </section>
+
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-index">#</th>
+            <th>文件名</th>
+            <th class="col-size">大小</th>
+            <th class="col-hash">MD5</th>
+            <th class="col-hash">slice_md5</th>
+            <th class="col-state">状态</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty">列表为空，拖入文件或点击上方按钮添加</div>
+    </section>
+
+    <section class="output">
+      <div class="output-head">
+        <span>秒传 JSON</span>
+        <div class="output-actions">
+          <button id="btn-copy" class="ghost" disabled>复制</button>
+          <button id="btn-save" class="ghost" disabled>另存为…</button>
+        </div>
+      </div>
+      <pre id="json">（计算完成后会自动复制到剪贴板，粘贴到网页端秒传助手即可）</pre>
+    </section>
+  </main>
+
+  <footer>全部计算在本机完成，文件只读；支持 http(s) 直链流式读取，无需下载到磁盘。</footer>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
