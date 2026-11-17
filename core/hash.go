@@ -11,12 +11,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -57,70 +57,133 @@ func SliceSize(size int64) int64 {
 	return n * 10 * MiB
 }
 
+const (
+	// chunkSize 是单次读取的缓冲大小。
+	chunkSize = 4 * MiB
+	// chunkPoolSize 个缓冲轮流复用，内存占用固定（约 16 MB）。
+	chunkPoolSize = 4
+)
+
+// chunk 是一段已读入内存的数据；整文件、分片两个消费者都处理完后才归还缓冲。
+type chunk struct {
+	buf  []byte
+	n    int
+	left *int32
+}
+
+func releaseChunk(pool chan []byte, c *chunk) {
+	if atomic.AddInt32(c.left, -1) == 0 {
+		pool <- c.buf
+	}
+}
+
 // HashReader 边读边算，不缓存文件内容。
+//
+// 整文件 MD5 与分片 MD5 由两个 goroutine 消费同一批数据：文件只读一遍，
+// 两份哈希并行计算，避免单线程里先后算两次导致的 CPU 瓶颈。
 func HashReader(r io.Reader, size int64, report func(done, total int64)) (string, string, error) {
 	sliceSize := SliceSize(size)
 	small := size <= SmallLimit
 
-	whole := md5.New()
-	buf := make([]byte, 4*MiB)
-
-	var parts []string
-	var part hash.Hash
-	var partRemain int64
-	if !small {
-		part = md5.New()
-		partRemain = sliceSize
+	pool := make(chan []byte, chunkPoolSize)
+	for i := 0; i < chunkPoolSize; i++ {
+		pool <- make([]byte, chunkSize)
 	}
 
-	var done int64
-	for {
-		n, rerr := r.Read(buf)
-		if n > 0 {
-			whole.Write(buf[:n])
-			if !small {
+	wholeCh := make(chan *chunk, chunkPoolSize)
+	sliceCh := make(chan *chunk, chunkPoolSize)
+
+	// 消费者 1：整文件 MD5
+	wholeDone := make(chan string, 1)
+	go func() {
+		h := md5.New()
+		for c := range wholeCh {
+			h.Write(c.buf[:c.n])
+			releaseChunk(pool, c)
+		}
+		wholeDone <- strings.ToUpper(hex.EncodeToString(h.Sum(nil)))
+	}()
+
+	// 消费者 2：分片 MD5；小文件直接释放缓冲
+	sliceDone := make(chan []string, 1)
+	go func() {
+		var parts []string
+		if !small {
+			h := md5.New()
+			remain := sliceSize
+			for c := range sliceCh {
 				off := 0
-				for off < n {
-					take := int64(n - off)
-					if take > partRemain {
-						take = partRemain
+				for off < c.n {
+					take := int64(c.n - off)
+					if take > remain {
+						take = remain
 					}
-					part.Write(buf[off : off+int(take)])
-					partRemain -= take
+					h.Write(c.buf[off : off+int(take)])
+					remain -= take
 					off += int(take)
-					if partRemain == 0 {
-						parts = append(parts, strings.ToUpper(hex.EncodeToString(part.Sum(nil))))
-						part = md5.New()
-						partRemain = sliceSize
+					if remain == 0 {
+						parts = append(parts, strings.ToUpper(hex.EncodeToString(h.Sum(nil))))
+						h.Reset()
+						remain = sliceSize
 					}
 				}
+				releaseChunk(pool, c)
 			}
-			done += int64(n)
-			if report != nil {
-				report(done, size)
+			// 最后一片不足 sliceSize 也要计入
+			if remain != sliceSize {
+				parts = append(parts, strings.ToUpper(hex.EncodeToString(h.Sum(nil))))
+			}
+		} else {
+			for c := range sliceCh {
+				releaseChunk(pool, c)
 			}
 		}
-		if rerr == io.EOF {
-			break
+		sliceDone <- parts
+	}()
+
+	readErr := make(chan error, 1)
+	var done int64
+	go func() {
+		defer close(sliceCh)
+		defer close(wholeCh)
+		for {
+			buf := <-pool
+			n, err := r.Read(buf)
+			if n > 0 {
+				left := int32(2)
+				c := &chunk{buf: buf, n: n, left: &left}
+				wholeCh <- c
+				sliceCh <- c
+				done += int64(n)
+				if report != nil {
+					report(done, size)
+				}
+			} else {
+				pool <- buf
+			}
+			if err != nil {
+				if err == io.EOF {
+					readErr <- nil
+				} else {
+					readErr <- err
+				}
+				return
+			}
 		}
-		if rerr != nil {
-			return "", "", rerr
-		}
+	}()
+
+	err := <-readErr
+	full := <-wholeDone
+	parts := <-sliceDone
+	if err != nil {
+		return "", "", err
 	}
 
 	if done != size {
 		return "", "", fmt.Errorf("读取字节数与文件大小不一致（期望 %d，实际 %d）", size, done)
 	}
 
-	full := strings.ToUpper(hex.EncodeToString(whole.Sum(nil)))
-	if small {
-		return full, full, nil
-	}
-	// 最后一片不足 sliceSize 也要计入
-	if partRemain != sliceSize {
-		parts = append(parts, strings.ToUpper(hex.EncodeToString(part.Sum(nil))))
-	}
-	if len(parts) == 0 {
+	if small || len(parts) == 0 {
 		return full, full, nil
 	}
 	agg := md5.Sum([]byte(strings.Join(parts, "\n")))
